@@ -22,6 +22,9 @@
     .dot.ok { background: #5c940d; } .dot.rec { background: #f03e3e; animation: blink 1s infinite; }
     @keyframes blink { 50% { opacity: .2; } }
     a { color: #ffa94d; }
+    .light { font-size: 13px; padding: 8px 10px; border-radius: 8px; }
+    .light.too_dark { background: #5c1a00; color: #ffd8a8; }
+    .light.low_light { background: #4a3b00; color: #ffe8a3; }
   </style>
 </head>
 <body>
@@ -32,6 +35,7 @@
       <span><span id="gps-dot" class="dot"></span><span id="gps">GPS: waiting</span></span>
       <span id="timer">00:00</span>
     </div>
+    <div id="light" class="light" role="status" hidden></div>
     <input id="name" placeholder="Ride name (optional)">
     <button id="rec">Start recording</button>
     <button id="retry" class="secondary" hidden>Retry upload</button>
@@ -141,6 +145,37 @@ function saveToDevice() {
   }
   $("#status").textContent = "Saved to your phone. Upload both files later from the dashboard's ＋ Ride button.";
 }
+
+// Live lighting hint. Same road area and thresholds as the server's check (roadscan/lighting.py),
+// so the phone warns before a ride is wasted on footage the model can't read.
+const DARK_LUMA = 45, DIM_LUMA = 60;
+const lightCanvas = Object.assign(document.createElement("canvas"), { width: 96, height: 54 });
+const recentLuma = [];
+function checkLight() {
+  const v = $("#preview");
+  if (!v.videoWidth) return;
+  const ctx = lightCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(v, 0, 0, 96, 54);
+  const { data } = ctx.getImageData(14, 27, 68, 19);  // x 15–85%, y 50–85% of the frame
+  let sum = 0;
+  for (let i = 0; i < data.length; i += 4) sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  recentLuma.push(sum / (data.length / 4));
+  if (recentLuma.length > 5) recentLuma.shift();  // ~10 s window so a passing shadow doesn't trigger it
+  const dark = recentLuma.filter((l) => l < DARK_LUMA).length / recentLuma.length;
+  const dim = recentLuma.filter((l) => l < DIM_LUMA).length / recentLuma.length;
+  const box = $("#light");
+  if (dark >= 0.5) {
+    box.className = "light too_dark";
+    box.textContent = "⚠ Too dark — road damage can't be detected reliably. Record in daylight for usable results.";
+  } else if (dim >= 0.3) {
+    box.className = "light low_light";
+    box.textContent = "Low light — detections will be less reliable than in daylight.";
+  } else {
+    box.className = "light";
+  }
+  box.hidden = box.className === "light";
+}
+setInterval(checkLight, 2000);
 
 $("#retry").addEventListener("click", sendPending);
 $("#save").addEventListener("click", saveToDevice);

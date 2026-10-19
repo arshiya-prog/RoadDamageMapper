@@ -75,6 +75,10 @@ MIGRATIONS = {
         # device: phone/dashcam GPS; reconstructed: rebuilt from a map + video landmarks;
         # simulated: generated (synthetic rides only).
         "gps_source": "TEXT NOT NULL DEFAULT 'device'",
+        # Lighting check (roadscan/lighting.py): ok | low_light | too_dark | unknown; NULL = not checked.
+        "lighting": "TEXT",
+        "median_luma": "REAL",
+        "dark_fraction": "REAL",
     },
     "defects": {
         "source": "TEXT NOT NULL DEFAULT 'model'",
@@ -132,4 +136,10 @@ def set_ride_status(conn, ride_id: int, status: str, progress: float | None = No
         conn.execute("UPDATE rides SET status=?, error=? WHERE id=?", (status, error, ride_id))
     else:
         conn.execute("UPDATE rides SET status=?, progress=?, error=? WHERE id=?", (status, progress, error, ride_id))
+    conn.commit()
+
+
+def set_lighting(conn, ride_id: int, result: dict) -> None:
+    conn.execute("UPDATE rides SET lighting=?, median_luma=?, dark_fraction=? WHERE id=?",
+                 (result["lighting"], result["median_luma"], result["dark_fraction"], ride_id))
     conn.commit()

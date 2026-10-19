@@ -92,6 +92,19 @@ select { border: 1px solid var(--line); border-radius: var(--radius); padding: 6
 
 /* ---------- Layout ---------- */
 .layout { display: grid; grid-template-columns: 400px 1fr auto; min-height: 0; }
+.layout { transition: grid-template-columns .2s ease; }
+.layout.collapsed { grid-template-columns: 0 1fr auto; }
+.layout.collapsed #sidebar { visibility: hidden; border-right: 0; }  /* hidden from tab order too */
+.sidebar-toggle {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%); z-index: 1000;
+  width: 22px; height: 56px; display: grid; place-items: center; padding: 0; cursor: pointer;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-left: 0;
+  border-radius: 0 var(--radius) var(--radius) 0; box-shadow: 2px 0 6px rgba(0,0,0,.12);
+}
+.sidebar-toggle:hover { background: var(--bg); }
+.sidebar-toggle svg { transition: transform .2s ease; }
+.layout.collapsed .sidebar-toggle svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .layout, .sidebar-toggle svg { transition: none; } }
 #sidebar { background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto; min-height: 0; }
 .mapwrap { position: relative; min-height: 0; }
 #map { position: absolute; inset: 0; }
@@ -283,6 +296,8 @@ dialog input:not([type=checkbox]), dialog select { display: block; width: 100%; 
   .detail { position: fixed; right: 0; top: 0; bottom: 0; z-index: 1000; box-shadow: -8px 0 24px rgba(0,0,0,.15); width: min(380px, 100vw); }
 }
 @media (max-width: 760px) {
+  .sidebar-toggle { display: none; }
+  .layout.collapsed #sidebar { visibility: visible; }
   body { display: block; height: auto; }
   .appbar { flex-wrap: wrap; gap: var(--s3); padding: var(--s3) var(--s4); }
   .brand { min-width: 0; }
@@ -301,3 +316,7 @@ dialog input:not([type=checkbox]), dialog select { display: block; width: 100%; 
   .guide dl { grid-template-columns: 1fr; }
 }
 .toast { position: fixed; left: 50%; bottom: var(--s5); transform: translateX(-50%); z-index: 2000; background: var(--ink); color: #fff; padding: var(--s2) var(--s4); border-radius: var(--radius); font-size: var(--t-sm); box-shadow: 0 4px 16px rgba(0,0,0,.25); }
+.light-warning { margin-bottom: var(--s3); padding: var(--s2) var(--s3); border-radius: var(--radius); font-size: var(--t-sm); border: 1px solid; }
+.light-warning.too_dark { background: var(--critical-bg); color: var(--critical-ink); border-color: #f3c3be; }
+.light-warning.low_light { background: var(--medium-bg); color: var(--medium-ink); border-color: #f0dc9c; }
+.light-warning a { color: inherit; }

@@ -12,6 +12,12 @@ const SYNC_TEXT = {
   reconstructed: "GPS was reconstructed from a map route and video landmarks after the ride — map positions are approximate (±10–20 m).",
   simulated: "Synthetic ride: simulated GPS and generated detections, no video.",
 };
+const LIGHT = {
+  too_dark: { tag: "Too dark", cls: "sev-critical",
+    text: (r) => `<b>Too dark to analyse reliably.</b> ${Math.round(r.dark_fraction * 100)}% of sampled frames are much darker than the daytime images the model was trained on. Expect missed defects and false alarms — re-record this road in daylight.` },
+  low_light: { tag: "Low light", cls: "sev-medium",
+    text: () => "<b>Low light.</b> Parts of this video are darker than the model's training images, so detections here are less reliable than usual." },
+};
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const api = (p) => fetch(p).then((r) => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
@@ -236,7 +242,7 @@ async function loadRides(selectId, { keepCurrent = false } = {}) {
   state.rides = await api("/api/rides");
   const visible = state.rides.filter((r) => state.source === "all" || r.source === state.source);
   const sel = $("#ride-select");
-  const opt = (r) => `<option value="${r.id}">${esc(r.name)} · ${fmtShort(r.recorded_at)}${r.status !== "done" ? ` (${r.status})` : ""}</option>`;
+  const opt = (r) => `<option value="${r.id}">${esc(r.name)} · ${fmtShort(r.recorded_at)}${r.status !== "done" ? ` (${r.status})` : ""}${LIGHT[r.lighting] ? ` · ⚠ ${LIGHT[r.lighting].tag.toLowerCase()}` : ""}</option>`;
   const groups = [["model", "Model predictions"], ["synthetic", "Synthetic demo"]]
     .map(([src, label]) => [label, visible.filter((r) => r.source === src)])
     .filter(([, rs]) => rs.length);
@@ -285,11 +291,13 @@ async function openRide(id) {
   $("#ride-meta").innerHTML = `${sourceTag(ride.source)}
     <span class="tag gps" title="${esc(SYNC_TEXT[ride.gps_source])}">${GPS_TEXT[ride.gps_source] || ride.gps_source}</span>
     ${ride.status !== "done" ? `<span class="tag status">${esc(ride.status)}</span>` : ""}
+    ${LIGHT[ride.lighting] ? `<span class="badge ${LIGHT[ride.lighting].cls}" title="See 'How scores work' → Lighting check">⚠ ${LIGHT[ride.lighting].tag}</span>` : ""}
     <span>${fmtDate(ride.recorded_at)} · ${(ride.distance_m / 1000).toFixed(1)} km · ${fmtTime(ride.duration_s)} · ${ride.n_detections} detection(s)</span>
     <button class="btn small danger" id="delete-ride-btn" ${ride.status === "pending" || ride.status === "processing"
       ? 'disabled title="Wait for processing to finish before deleting"' : 'title="Delete this ride"'}>Delete ride</button>`;
   $("#delete-ride-btn").addEventListener("click", () => openDeleteDialog(ride));
   $("#sync-note").textContent = SYNC_TEXT[ride.gps_source] || "";
+  renderLightWarning(ride);
 
   const video = $("#video");
   $(".dashcam").classList.toggle("has-video", !!ride.video_url);
@@ -478,6 +486,10 @@ function watchLive(rideId) {
   es.addEventListener("progress", async (e) => {
     const p = JSON.parse(e.data);
     if (p.status === "processing") showLiveBanner(`Detecting road damage… ${Math.round(p.progress * 100)}%`, p.progress);
+    if (p.lighting && state.ride?.id === rideId && state.ride.lighting !== p.lighting) {
+      Object.assign(state.ride, { lighting: p.lighting, dark_fraction: p.dark_fraction });
+      renderLightWarning(state.ride);
+    }
     if (p.status === "done" || p.status === "failed") {
       es.close();
       state.live = null;
@@ -520,6 +532,15 @@ $("#upload-form").addEventListener("submit", async (e) => {
     submit.disabled = false;
   }
 });
+
+function renderLightWarning(ride) {
+  const box = $("#light-warning");
+  const l = LIGHT[ride?.lighting];
+  box.hidden = !l;
+  box.className = `light-warning ${ride?.lighting || ""}`;
+  box.innerHTML = l ? `${l.text(ride)} <a href="#" data-open-guide="lighting">Details</a>` : "";
+  if (l) bindGuideLink($("[data-open-guide]", box));
+}
 
 // ---------- delete ride ----------
 const delDlg = $("#delete-dialog");
@@ -736,7 +757,7 @@ async function openDefect(id, { fly = true } = {}) {
       <table class="obs">
         <thead><tr><th>Date</th><th>Ride</th><th>Severity</th><th>Conf.</th><th></th></tr></thead>
         <tbody>${d.history.map((h) => `<tr>
-          <td>${fmtShort(h.recorded_at)}</td><td>${esc(h.ride_name)}</td>
+          <td>${fmtShort(h.recorded_at)}</td><td>${esc(h.ride_name)}${LIGHT[h.ride_lighting] ? ` <span class="badge ${LIGHT[h.ride_lighting].cls}">${LIGHT[h.ride_lighting].tag}</span>` : ""}</td>
           <td>${sevNum(h.severity)} <span class="badge sev-${h.level}">${h.level}</span></td><td>${pct(h.conf)}</td>
           <td><button class="btn small" data-replay="${h.ride_id}" data-t="${h.t}" title="Open this moment in ride replay">▶ ${fmtTime(h.t)}</button></td>
         </tr>`).join("")}</tbody>
@@ -796,6 +817,25 @@ function bindGuideLink(a) {
   });
 }
 $$("[data-open-guide]").forEach(bindGuideLink);
+
+// ---------- sidebar collapse ----------
+function setSidebar(open, { remember = true } = {}) {
+  const btn = $("#sidebar-toggle");
+  $(".layout").classList.toggle("collapsed", !open);
+  btn.setAttribute("aria-expanded", String(open));
+  const label = open ? "Hide side panel" : "Show side panel";
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+  if (remember) { try { localStorage.setItem("roadscanSidebar", open ? "open" : "closed"); } catch {} }
+  // The map's container changes width; Leaflet must re-measure after the slide. Transitions can be slowed
+  // (background tab) or skipped (reduced motion), so also re-measure on a timer as a backstop.
+  setTimeout(() => map.invalidateSize({ pan: false }), 450);
+}
+$(".layout").addEventListener("transitionend", (e) => {
+  if (e.target === $(".layout") && e.propertyName === "grid-template-columns") map.invalidateSize({ pan: false });
+});
+$("#sidebar-toggle").addEventListener("click", () => setSidebar($(".layout").classList.contains("collapsed")));
+try { if (localStorage.getItem("roadscanSidebar") === "closed") setSidebar(false, { remember: false }); } catch {}
 
 // ---------- boot ----------
 (async () => {

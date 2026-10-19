@@ -48,7 +48,10 @@ def main():
     print(f"Processing ride {ride_id} ({track.distance_m() / 1000:.1f} km)…")
     jobs.process_ride(ride_id, weights=args.weights, sample_fps=args.fps,
                       cam=Camera(height_m=args.cam_height, pitch_deg=args.cam_pitch))
-    r = conn.execute("SELECT status, error FROM rides WHERE id=?", (ride_id,)).fetchone()
+    r = conn.execute("SELECT status, error, lighting, dark_fraction FROM rides WHERE id=?", (ride_id,)).fetchone()
+    if r["lighting"] in ("too_dark", "low_light"):
+        print(f"WARNING: video is {r['lighting'].replace('_', ' ')} ({r['dark_fraction']:.0%} of sampled frames dark) "
+              "— detections are unreliable; re-record in daylight.")
     n = conn.execute("SELECT COUNT(*) FROM detections WHERE ride_id=?", (ride_id,)).fetchone()[0]
     print(f"Ride {ride_id}: {r['status']}, {n} defects" + (f" — {r['error']}" if r["error"] else ""))
 

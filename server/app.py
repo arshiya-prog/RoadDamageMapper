@@ -48,6 +48,7 @@ class _ThreadConnection:
 
 conn = _ThreadConnection()
 executor = ThreadPoolExecutor(max_workers=1)  # one video at a time; YOLO saturates the GPU anyway
+executor.submit(jobs.backfill_lighting)  # older rides get a lighting check without re-processing
 WEB_DIR = db.ROOT / "web"
 UPLOAD_DIR = db.DATA_DIR / "uploads"  # outside /media so half-finished uploads are never served
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -262,7 +263,8 @@ async def live(ride_id: int, after: int = 0):
     async def stream():
         last = after
         while True:
-            r = conn.execute("SELECT status, progress, error FROM rides WHERE id=?", (ride_id,)).fetchone()
+            r = conn.execute("SELECT status, progress, error, lighting, dark_fraction FROM rides WHERE id=?",
+                             (ride_id,)).fetchone()
             if not r:
                 yield "event: error\ndata: {\"error\": \"ride not found\"}\n\n"
                 return
@@ -316,7 +318,7 @@ def get_defect(defect_id: int):
         raise HTTPException(404, "defect not found")
     d["history"] = [_detection_out(h) for h in conn.execute(
         """SELECT det.*, r.name AS ride_name, r.recorded_at, r.source AS ride_source, r.gps_source,
-                  r.video_path IS NOT NULL AS has_video
+                  r.video_path IS NOT NULL AS has_video, r.lighting AS ride_lighting
            FROM detections det JOIN rides r ON r.id = det.ride_id
            WHERE det.defect_id=? ORDER BY r.recorded_at, det.t""", (defect_id,))]
     return d

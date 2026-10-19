@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=11">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
   <!-- ===== Header: what am I looking at? ===== -->
@@ -54,6 +54,7 @@
         </div>
         <div id="ride-meta" class="ride-meta"></div>
 
+        <div id="light-warning" class="light-warning" role="status" hidden></div>
         <div class="dashcam">
           <video id="video" muted playsinline preload="auto"></video>
           <div id="dash-sim" class="dash-sim">
@@ -107,6 +108,10 @@
     </aside>
 
     <main class="mapwrap">
+      <button id="sidebar-toggle" class="sidebar-toggle" aria-controls="sidebar" aria-expanded="true"
+              aria-label="Hide side panel" title="Hide side panel">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
       <div id="map" aria-label="Map of rides and defects"></div>
       <div id="legend" class="legend" aria-label="Map legend">
         <div class="legend-row">
@@ -217,6 +222,15 @@
           <dt>Seen on 1 ride</dt><dd>No history yet.</dd>
         </dl>
       </section>
+      <section id="g-lighting">
+        <h3>Lighting check</h3>
+        <p>Before detection, 24 frames are sampled across each uploaded video and the brightness of the road ahead is measured (0–255). The model's daytime training images have a median of about 95, and 95% are above 57.</p>
+        <dl>
+          <dt><span class="badge sev-critical">Too dark</span></dt><dd>Half or more of the sampled frames are below 45. Expect missed defects and false alarms; re-record in daylight.</dd>
+          <dt><span class="badge sev-medium">Low light</span></dt><dd>At least 30% of sampled frames are below 60. Results are less reliable than usual.</dd>
+        </dl>
+        <p>The warning does not change any detection or score; it tells you how far to trust them.</p>
+      </section>
       <section id="g-confirm">
         <h3>Ride confirmations &amp; repairs</h3>
         <p><b>Confirmed on N rides</b>: N separate rides detected damage of the same family (pothole vs. crack) within 10 m. Synthetic and model data are never merged.</p>
@@ -231,7 +245,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-  <script src="upload.js?v=11"></script>
-  <script src="app.js?v=11"></script>
+  <script src="upload.js?v=14"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>

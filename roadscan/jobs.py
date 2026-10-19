@@ -6,7 +6,7 @@ import os
 import traceback
 from pathlib import Path
 
-from . import db, registry
+from . import db, lighting, registry
 from .geo import GpsTrack
 from .pipeline import RideDetection, process_video
 from .severity import Camera
@@ -34,6 +34,8 @@ def process_ride(ride_id: int, weights: str = DEFAULT_WEIGHTS, cam: Camera | Non
     ride = conn.execute("SELECT * FROM rides WHERE id=?", (ride_id,)).fetchone()
     try:
         db.set_ride_status(conn, ride_id, "processing", 0)
+        # Checked first so the dashboard can warn while detection is still running.
+        db.set_lighting(conn, ride_id, lighting.assess(db.MEDIA_DIR / ride["video_path"]))
         track = GpsTrack.from_json(json.loads(ride["track_json"]))
         detector = get_detector(weights)
 
@@ -53,3 +55,15 @@ def process_ride(ride_id: int, weights: str = DEFAULT_WEIGHTS, cam: Camera | Non
         db.set_ride_status(conn, ride_id, "failed", error=str(e))
     finally:
         conn.close()
+
+
+def backfill_lighting() -> int:
+    """Check rides that have a video but were processed before the lighting check existed."""
+    conn = db.connect()
+    rows = conn.execute("SELECT id, video_path FROM rides WHERE video_path IS NOT NULL AND lighting IS NULL").fetchall()
+    for r in rows:
+        path = db.MEDIA_DIR / r["video_path"]
+        if path.exists():
+            db.set_lighting(conn, r["id"], lighting.assess(path))
+    conn.close()
+    return len(rows)
