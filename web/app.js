@@ -241,7 +241,16 @@ async function loadRides(selectId, { keepCurrent = false } = {}) {
     .map(([src, label]) => [label, visible.filter((r) => r.source === src)])
     .filter(([, rs]) => rs.length);
   sel.innerHTML = groups.map(([label, rs]) => `<optgroup label="${label}">${rs.map(opt).join("")}</optgroup>`).join("");
-  if (!visible.length) { sel.innerHTML = "<option>No rides in this view</option>"; return; }
+  if (!visible.length) {
+    sel.innerHTML = "<option>No rides in this view</option>";
+    state.ride = null;
+    rideLayer.clearLayers();
+    $("#ride-meta").innerHTML = "";
+    $("#feed").innerHTML = "";
+    $("#feed-count").textContent = "0";
+    $("#ticks").innerHTML = "";
+    return;
+  }
   let id = selectId;
   if (id == null && keepCurrent && visible.some((r) => r.id === state.ride?.id)) id = state.ride.id;
   // Default: most recent model ride if there is one (real output first), else most recent ride.
@@ -276,7 +285,10 @@ async function openRide(id) {
   $("#ride-meta").innerHTML = `${sourceTag(ride.source)}
     <span class="tag gps" title="${esc(SYNC_TEXT[ride.gps_source])}">${GPS_TEXT[ride.gps_source] || ride.gps_source}</span>
     ${ride.status !== "done" ? `<span class="tag status">${esc(ride.status)}</span>` : ""}
-    <span>${fmtDate(ride.recorded_at)} · ${(ride.distance_m / 1000).toFixed(1)} km · ${fmtTime(ride.duration_s)} · ${ride.n_detections} detection(s)</span>`;
+    <span>${fmtDate(ride.recorded_at)} · ${(ride.distance_m / 1000).toFixed(1)} km · ${fmtTime(ride.duration_s)} · ${ride.n_detections} detection(s)</span>
+    <button class="btn small danger" id="delete-ride-btn" ${ride.status === "pending" || ride.status === "processing"
+      ? 'disabled title="Wait for processing to finish before deleting"' : 'title="Delete this ride"'}>Delete ride</button>`;
+  $("#delete-ride-btn").addEventListener("click", () => openDeleteDialog(ride));
   $("#sync-note").textContent = SYNC_TEXT[ride.gps_source] || "";
 
   const video = $("#video");
@@ -508,6 +520,58 @@ $("#upload-form").addEventListener("submit", async (e) => {
     submit.disabled = false;
   }
 });
+
+// ---------- delete ride ----------
+const delDlg = $("#delete-dialog");
+let deleting = null;
+
+function openDeleteDialog(ride) {
+  deleting = ride;
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  $("#delete-name").textContent = `${ride.name} · ${fmtDate(ride.recorded_at)}`;
+  $("#delete-impact").innerHTML = [
+    n(ride.n_detections, "detection", "detections") + " from this ride",
+    n(ride.defects_only_here, "defect that was only seen on this ride", "defects that were only seen on this ride"),
+    ride.video_url ? "The ride's video and detection images" : "The ride's GPS track",
+  ].map((t) => `<li>${esc(t)}</li>`).join("");
+  $("#delete-error").textContent = "";
+  $("#delete-confirm").disabled = false;
+  delDlg.showModal();
+  $("#delete-cancel").focus();  // safe default: Enter cancels
+}
+
+$("#delete-cancel").addEventListener("click", () => delDlg.close());
+$("#delete-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const ride = deleting;
+  $("#delete-confirm").disabled = true;
+  $("#delete-error").textContent = "";
+  try {
+    await RoadScanUpload.deleteRide(ride.id);
+  } catch (err) {
+    $("#delete-error").textContent = `Couldn't delete: ${err.message}`;
+    $("#delete-confirm").disabled = false;
+    return;
+  }
+  delDlg.close();
+  pause();
+  if (state.live) { state.live.close(); state.live = null; }
+  state.ride = null;
+  rideLayer.clearLayers();
+  await Promise.all([loadStats(), loadDefects()]);
+  if (state.selectedId && !state.defects.some((d) => d.id === state.selectedId)) closeDetail();
+  await loadRides();
+  showToast(`Deleted “${ride.name}”.`);
+});
+
+function showToast(text) {
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.setAttribute("role", "status");
+  t.textContent = text;
+  document.body.append(t);
+  setTimeout(() => t.remove(), 4000);
+}
 
 // ---------- defects ----------
 async function loadDefects() {

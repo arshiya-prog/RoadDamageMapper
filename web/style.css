@@ -55,6 +55,14 @@ a { color: var(--focus); }
 .btn.primary { background: var(--ink); border-color: var(--ink); color: #fff; }
 .btn.ghost { background: transparent; }
 .btn { white-space: nowrap; }
+.btn.danger { color: var(--critical); border-color: #f3c3be; background: var(--surface); }
+.btn.danger:hover { border-color: var(--critical); }
+.btn.danger.solid { background: var(--critical); border-color: var(--critical); color: #fff; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.ride-meta .btn.danger { margin-left: auto; }
+.delete-name { font-weight: 600; margin-bottom: var(--s3); }
+.delete-impact { margin: var(--s1) 0 var(--s3); padding-left: 20px; font-size: var(--t-sm); }
+.form-error { color: var(--critical-ink); font-size: var(--t-sm); min-height: 1em; margin: var(--s2) 0; }
 .btn.small { padding: 3px 8px; font-size: var(--t-xs); }
 select { border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; background: var(--surface); color: var(--ink); }
 .row { display: flex; gap: var(--s2); align-items: center; }
@@ -292,3 +300,4 @@ dialog input:not([type=checkbox]), dialog select { display: block; width: 100%; 
   .detail { top: auto; height: 80vh; width: 100vw; border-radius: 12px 12px 0 0; }
   .guide dl { grid-template-columns: 1fr; }
 }
+.toast { position: fixed; left: 50%; bottom: var(--s5); transform: translateX(-50%); z-index: 2000; background: var(--ink); color: #fff; padding: var(--s2) var(--s4); border-radius: var(--radius); font-size: var(--t-sm); box-shadow: 0 4px 16px rgba(0,0,0,.25); }

@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
   <!-- ===== Header: what am I looking at? ===== -->
@@ -151,6 +151,22 @@
     </form>
   </dialog>
 
+  <!-- Delete ride -->
+  <dialog id="delete-dialog" aria-labelledby="delete-title">
+    <form method="dialog" id="delete-form">
+      <h2 id="delete-title">Delete this ride?</h2>
+      <p id="delete-name" class="delete-name"></p>
+      <p class="t-small muted">This permanently removes:</p>
+      <ul id="delete-impact" class="delete-impact"></ul>
+      <p class="t-small muted">Defects also seen on other rides stay, recalculated from their remaining rides. This can't be undone.</p>
+      <p id="delete-error" class="form-error" role="alert"></p>
+      <div class="row end">
+        <button type="button" class="btn ghost" id="delete-cancel">Cancel</button>
+        <button type="submit" class="btn danger solid" id="delete-confirm">Delete ride</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Scoring guide -->
   <dialog id="guide" class="guide" aria-labelledby="guide-title">
     <div class="guide-head">
@@ -215,7 +231,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-  <script src="upload.js?v=10"></script>
-  <script src="app.js?v=10"></script>
+  <script src="upload.js?v=11"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

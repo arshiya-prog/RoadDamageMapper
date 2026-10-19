@@ -81,5 +81,8 @@
     return request("POST", `/api/uploads/${upload_id}/complete`, fd);
   }
 
-  window.RoadScanUpload = { uploadRide, authHeaders, hasKey: () => !!KEY };
+  // Not retried: deleting is a deliberate one-off action, and a retry after a lost response would 404.
+  const deleteRide = (id) => send("DELETE", `/api/rides/${id}`);
+
+  window.RoadScanUpload = { uploadRide, deleteRide, authHeaders, hasKey: () => !!KEY };
 })();

@@ -95,6 +95,10 @@ def get_ride(ride_id: int):
     out["track"] = json.loads(r["track_json"])
     out["detections"] = [_detection_out(d) for d in conn.execute(
         "SELECT * FROM detections WHERE ride_id=? ORDER BY t", (ride_id,))]
+    # Defects seen on no other ride: these disappear if this ride is deleted.
+    out["defects_only_here"] = conn.execute(
+        """SELECT COUNT(DISTINCT defect_id) FROM detections WHERE ride_id=? AND defect_id NOT IN
+           (SELECT defect_id FROM detections WHERE ride_id<>? AND defect_id IS NOT NULL)""", (ride_id, ride_id)).fetchone()[0]
     return out
 
 
@@ -239,6 +243,12 @@ async def complete_upload(
 
 @app.delete("/api/rides/{ride_id}")
 def remove_ride(ride_id: int):
+    r = conn.execute("SELECT status FROM rides WHERE id=?", (ride_id,)).fetchone()
+    if not r:
+        raise HTTPException(404, "ride not found")
+    if r["status"] in ("pending", "processing"):
+        # The detector thread is still writing detections for this ride.
+        raise HTTPException(409, "This ride is still being processed. Wait for it to finish, then delete it.")
     registry.delete_ride(conn, ride_id)
     shutil.rmtree(db.MEDIA_DIR / "rides" / str(ride_id), ignore_errors=True)
     shutil.rmtree(db.MEDIA_DIR / "crops" / str(ride_id), ignore_errors=True)

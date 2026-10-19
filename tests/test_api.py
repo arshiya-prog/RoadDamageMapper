@@ -160,3 +160,36 @@ def test_stale_uploads_are_cleared():
     os.utime(old, (0, 0))
     fresh_id = TestClient(srv.app).post("/api/uploads").json()["upload_id"]
     assert not old.exists() and (srv.UPLOAD_DIR / fresh_id).exists()
+
+
+def test_delete_ride_rules(monkeypatch, synthetic_video, gps_csv, blob_detector):
+    from roadscan import db
+    from server.app import app, conn
+
+    monkeypatch.setattr(jobs, "get_detector", lambda weights=None: blob_detector)
+    client = TestClient(app)
+    assert client.delete("/api/rides/999999").status_code == 404
+
+    # A ride that is still being processed can't be deleted (the detector is writing to it).
+    busy = db.create_ride(conn, "busy", "2026-10-01T08:00:00+05:30", [[0, 18.5, 73.8], [1, 18.5001, 73.8]], None, 1, 10)
+    db.set_ride_status(conn, busy, "processing", 0.4)
+    r = client.delete(f"/api/rides/{busy}")
+    assert r.status_code == 409 and "still being processed" in r.json()["detail"]
+    db.set_ride_status(conn, busy, "done", 1.0)
+    assert client.delete(f"/api/rides/{busy}").json() == {"ok": True}
+
+    # A processed ride: the dialog's impact count, then everything is removed.
+    with synthetic_video.open("rb") as v, gps_csv.open("rb") as g:
+        rid = client.post("/api/rides", files={"video": ("ride.mp4", v), "gps": ("track.csv", g)}).json()["id"]
+    for _ in range(100):
+        ride = client.get(f"/api/rides/{rid}").json()
+        if ride["status"] == "done":
+            break
+        time.sleep(0.1)
+    assert ride["defects_only_here"] == 2
+    crop = ride["detections"][0]["crop_url"]
+    assert client.get(crop).status_code == 200
+    assert client.delete(f"/api/rides/{rid}").json() == {"ok": True}
+    assert client.get(f"/api/rides/{rid}").status_code == 404
+    assert client.get(ride["video_url"]).status_code == 404 and client.get(crop).status_code == 404
+    assert not [d for d in client.get("/api/defects").json() if d["last_ride"] == ride["name"]]
