@@ -42,7 +42,7 @@ def dataset_yaml(name: str) -> Path:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="rdd2022", help="'rdd2022' or a path to a YOLO data.yaml")
-    ap.add_argument("--model", default="yolo11n.pt", help="starting checkpoint (n=fastest, s/m=more accurate)")
+    ap.add_argument("--model", default="yolo11s.pt", help="starting checkpoint; yolo11s.pt is what weights/road_damage.pt was trained from (n=faster, m=more accurate)")
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=16)
