@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>RoadScan Recorder</title>
+  <style>
+    :root { --accent: #e8590c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #000; color: #fff; font: 15px system-ui, sans-serif; height: 100dvh; display: flex; flex-direction: column; }
+    video { flex: 1; width: 100%; object-fit: cover; background: #111; min-height: 0; }
+    .bar { padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); display: grid; gap: 10px; background: #111; }
+    .info { display: flex; justify-content: space-between; font: 13px ui-monospace, monospace; color: #bbb; }
+    button { font: 600 17px system-ui; padding: 14px; border-radius: 12px; border: 0; }
+    #rec { background: var(--accent); color: #fff; }
+    #rec.on { background: #c92a2a; }
+    #rec:disabled { opacity: .5; }
+    .secondary { background: #2b2b2b; color: #fff; }
+    input { padding: 10px; border-radius: 10px; border: 0; font: inherit; }
+    .warn { background: #5c1a00; color: #ffd8a8; padding: 10px 14px; font-size: 13px; }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #666; margin-right: 6px; }
+    .dot.ok { background: #5c940d; } .dot.rec { background: #f03e3e; animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: .2; } }
+    a { color: #ffa94d; }
+  </style>
+</head>
+<body>
+  <div id="warn" class="warn" hidden></div>
+  <video id="preview" autoplay muted playsinline></video>
+  <div class="bar">
+    <div class="info">
+      <span><span id="gps-dot" class="dot"></span><span id="gps">GPS: waiting</span></span>
+      <span id="timer">00:00</span>
+    </div>
+    <input id="name" placeholder="Ride name (optional)">
+    <button id="rec">Start recording</button>
+    <button id="retry" class="secondary" hidden>Retry upload</button>
+    <button id="save" class="secondary" hidden>Save to phone instead</button>
+    <div id="status" class="info"></div>
+  </div>
+<script src="upload.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+let stream, recorder, chunks = [], points = [], startMs = 0, startedAt = "", watchId, timerId, wakeLock;
+
+if (!window.isSecureContext) {
+  $("#warn").hidden = false;
+  $("#warn").innerHTML = "Camera and GPS need HTTPS on a phone. On the Mac run <code>scripts/start_tunnel.sh</code> and open the https link it prints.";
+}
+
+async function init() {
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+    audio: false,
+  });
+  $("#preview").srcObject = stream;
+  watchId = navigator.geolocation.watchPosition(onFix, (e) => { $("#gps").textContent = `GPS error: ${e.message}`; },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+}
+
+function onFix(p) {
+  const { latitude: lat, longitude: lon, accuracy: acc, speed } = p.coords;
+  $("#gps-dot").className = "dot ok";
+  $("#gps").textContent = `±${Math.round(acc)} m${speed != null ? ` · ${Math.round(speed * 3.6)} km/h` : ""}`;
+  if (recorder?.state === "recording") {
+    points.push({ t: (p.timestamp - startMs) / 1000, lat, lon, acc, speed });
+  }
+}
+
+function pickMime() {
+  return ["video/mp4;codecs=avc1", "video/webm;codecs=vp9", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m)) || "";
+}
+
+async function start() {
+  if (pending && !confirm("The last ride hasn't uploaded yet. Discard it and start a new one?")) return;
+  pending = null;
+  chunks = []; points = [];
+  const mimeType = pickMime();
+  recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: 2_500_000  /* ≈19 MB per minute */ } : undefined);
+  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  recorder.onstop = upload;
+  recorder.start(1000);
+  startMs = Date.now();
+  startedAt = new Date(startMs).toISOString();
+  $("#rec").textContent = "Stop & upload";
+  $("#rec").classList.add("on");
+  $("#gps-dot").classList.add("rec");
+  timerId = setInterval(() => {
+    const s = Math.floor((Date.now() - startMs) / 1000);
+    $("#timer").textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")} · ${points.length} fixes`;
+  }, 500);
+  try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+}
+
+function stop() {
+  recorder.stop();
+  clearInterval(timerId);
+  wakeLock?.release();
+  $("#rec").textContent = "Start recording";
+  $("#rec").classList.remove("on");
+  $("#gps-dot").classList.remove("rec");
+}
+
+let pending = null;  // last recording, kept until it uploads so a failure never loses the ride
+
+async function upload() {
+  const type = recorder.mimeType || "video/webm";
+  const ext = type.includes("mp4") ? "mp4" : "webm";
+  if (points.length < 2) { $("#status").textContent = "Not enough GPS fixes — is location enabled?"; return; }
+  pending = {
+    video: new Blob(chunks, { type }), videoName: `ride.${ext}`,
+    gps: new Blob([JSON.stringify({ started_at: startedAt, points })], { type: "application/json" }), gpsName: "track.json",
+    fields: { name: $("#name").value, recorded_at: startedAt, gps_source: "device" },
+  };
+  chunks = [];
+  await sendPending();
+}
+
+async function sendPending() {
+  $("#retry").hidden = $("#save").hidden = true;
+  $("#rec").disabled = true;
+  try {
+    const ride = await RoadScanUpload.uploadRide({
+      ...pending,
+      onProgress: (f, text) => { $("#status").textContent = `${text} (${Math.floor(f * 100)}%)`; },
+    });
+    pending = null;
+    $("#status").innerHTML = `Uploaded ride #${ride.id} — detection is running. <a href="/">Watch it on the dashboard</a>`;
+  } catch (e) {
+    $("#status").textContent = `Upload failed: ${e.message}. Your recording is still here.`;
+    $("#retry").hidden = $("#save").hidden = false;
+  } finally {
+    $("#rec").disabled = false;
+  }
+}
+
+function saveToDevice() {
+  for (const [blob, name] of [[pending.video, pending.videoName], [pending.gps, pending.gpsName]]) {
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name });
+    a.click();
+  }
+  $("#status").textContent = "Saved to your phone. Upload both files later from the dashboard's ＋ Ride button.";
+}
+
+$("#retry").addEventListener("click", sendPending);
+$("#save").addEventListener("click", saveToDevice);
+window.addEventListener("beforeunload", (e) => { if (pending || recorder?.state === "recording") e.preventDefault(); });
+$("#rec").addEventListener("click", () => (recorder?.state === "recording" ? stop() : start()));
+init().catch((e) => { $("#warn").hidden = false; $("#warn").textContent = `Camera unavailable: ${e.message}`; });
+</script>
+</body>
+</html>

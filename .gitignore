@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+datasets/
+runs/
+weights/*.pt
+.pytest_cache/
+demo/route_raw.json
+*.pt
+training/_*.yaml
+*.mp4
+.DS_Store
+Icon?
